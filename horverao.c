@@ -18,8 +18,12 @@
  */
 #include "horverao.h"
 
+#ifndef NULL
+#define NULL 0x0
+#endif
+
 /* Algoritmo de Meeus/Jones/Butcher */
-void calculaPascoa(int *dia, int *mes, int ano) {
+void calculaPascoa(int ano, int *mes, int *dia) {
   int a = ano % 19;
   int b = ano / 100;
   int c = ano % 100;
@@ -38,7 +42,7 @@ void calculaPascoa(int *dia, int *mes, int ano) {
 
 /* congruência de Zeller
    dia da semana: 0 = dom, 1 = seg, ..., 6 = sáb */
-int diaDaSemana(int dia, int mes, int ano) {
+DiaDaSemana_t diaDaSemana(int ano, int mes, int dia) {
   int k, j;
   if (mes < 3) {
     mes += 12;
@@ -58,8 +62,8 @@ int bissexto(int ano) {
   return (ano % 400 == 0) || (ano % 4 == 0 && ano % 100 != 0);
 }
 
-void calculaDomingoCarnaval(int *dia, int *mes, int ano) {
-  calculaPascoa(dia, mes, ano);
+void calculaDomingoCarnaval(int ano, int *mes, int *dia) {
+  calculaPascoa(ano, mes, dia);
   if (*mes == 4) {
     if (*dia >= 19) {
       *mes = 3; *dia -= 18;
@@ -73,49 +77,125 @@ void calculaDomingoCarnaval(int *dia, int *mes, int ano) {
   }
 }
 
-int ehDomingoDeCarnaval(int dia, int mes, int ano) {
+int ehDomingoDeCarnaval(int ano, int mes, int dia) {
   int diaCarnaval, mesCarnaval, anoCarnaval = ano;
-  calculaDomingoCarnaval(&diaCarnaval, &mesCarnaval, anoCarnaval);
+  calculaDomingoCarnaval(anoCarnaval, &mesCarnaval, &diaCarnaval);
   return (dia == diaCarnaval && mes == mesCarnaval && ano == anoCarnaval);
 }
 
-int terceiroDomingo(int mes, int ano) {
+int terceiroDomingo(int ano, int mes) {
   int primeiroDomingo = 1;
-  int dds = diaDaSemana(primeiroDomingo, mes, ano);
+  int dds = diaDaSemana(ano, mes, primeiroDomingo);
   if (dds != 0) {
     primeiroDomingo += (7 - dds);
   }
   return primeiroDomingo + 14;
 }
 
-#define TRUE 1
-#define FALSE 0
+void inicioHorarioVerao(int ano, int *mes, int *dia) {
+    *mes = 10;
+    *dia = terceiroDomingo(ano, *mes);
+}
 
-int ehHorarioVerao(int dia, int mes, int ano, int dds) {
-  if (ano < 2009) return -1;
+void fimHorarioVerao(int ano, int *mes, int *dia) {
+    *mes = 2;
+    *dia = terceiroDomingo(ano, *mes);
+    if (ehDomingoDeCarnaval(ano, *mes, *dia)) {
+      *dia += 7;
+    }
+}
+
+Horario_t horario(int ano, int mes, int dia) {
+  if (ano < 2009) return Indefinido;
   if (mes == 11 || mes == 12 || mes == 1) {
-    return TRUE;
+    return HorarioDeVerao;
   }
   if (mes == 10) {
-    if (dia < 15) return FALSE;
-    if (dia >= 21) return TRUE;
-    /* vai para o domingo anterior */
-    if (dia-dds >= 15 && dia-dds < 21)
-      return TRUE;
-    else
-      return FALSE;
+    int diaInicio, mesInicio;
+    inicioHorarioVerao(ano, &mesInicio, &diaInicio);
+    if (dia < diaInicio) return Normal;
+    return HorarioDeVerao;
   }
   if (mes == 2) {
-    int diaFim;
-    if (dia < 15) return TRUE;
-    diaFim = terceiroDomingo(mes, ano);
-    if (ehDomingoDeCarnaval(diaFim, mes, ano)) {
-      diaFim += 7;
-    } 
-    if (dia >= diaFim)
-      return FALSE;
-    else
-      return TRUE;
+    int diaFim, mesFim;
+    fimHorarioVerao(ano, &mesFim, &diaFim);
+    if (dia == diaFim - 1) return UltimoDiaHorarioDeVerao;
+    if (dia < diaFim) return HorarioDeVerao;
+    return Normal;
   }
-  return FALSE;
+  return Normal;
+}
+
+int diasDoMes(int ano, int mes) {
+  switch (mes) {
+    case 1: case 3: case 5: case 7: case 8: case 10: case 12:
+      return 31;
+    case 2:
+      if (bissexto(ano))
+        return 29;
+      else
+        return 28;
+    case 4: case 6: case 9: case 11:
+      return 30;
+    default:
+      return -1;
+  }
+}
+
+void adicionaHoras(int *ano, int *mes, int *dia, int *hora,
+                   DiaDaSemana_t *dds, int horas) {
+  *hora = *hora + horas;
+  if (*hora < 0) {
+    *hora += 24;
+    *dia -= 1;
+    if (dds != NULL)
+      *dds = (*dds > 0) ? *dds - 1 : 6;
+    if (*dia == 0) {
+      *mes -= 1;
+      if (*mes == 0) {
+        *mes = 12;
+        *ano -= 1;
+      }
+      *dia = diasDoMes(*ano, *mes);
+    }
+  } else if (*hora >= 24) {
+    *hora -= 24;
+    *dia += 1;
+    if (dds != NULL)
+      *dds = (*dds < 6) ? *dds + 1 : 0;
+    if (*dia > diasDoMes(*ano, *mes)) {
+      *mes += 1;
+      if (*mes == 13) {
+        *mes = 1;
+        *ano += 1;
+      }
+      *dia = 1;
+    }
+  }
+}
+
+void utcParaHorarioLocal(int *ano, int *mes, int *dia, int *hora,
+                         DiaDaSemana_t *dds, Horario_t *isdst,
+                         Fuso_t fuso, Regra_t regra) {
+  int dst;
+  adicionaHoras(ano, mes, dia, hora, dds, fuso);
+  if (regra == NuncaEntraEmHorarioDeVerao) {
+    if (isdst != NULL)
+      *isdst = Normal;
+    return;
+  }
+  dst = horario(*ano, *mes, *dia);
+  if (isdst != NULL) {
+    *isdst = dst;
+  }
+  if (dst > 0) {
+    if (dst == UltimoDiaHorarioDeVerao) {
+      if (*hora == 23) {
+        if (isdst != NULL)
+          *isdst = Normal;
+        return;
+      }
+    }
+    adicionaHoras(ano, mes, dia, hora, dds, 1);
+  }
 }

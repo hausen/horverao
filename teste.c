@@ -12,14 +12,33 @@ int main(int argc, char *argv[]) {
 	    fprintf(stderr, "Usage: horverao dia mes ano\n");
     exit(1);
   }
-  calculaPascoa(&diap, &mesp, ano);
+  if (argc >= 5) {
+    int hora = atoi(argv[4]);
+    int minuto = (argc >= 6)? atoi(argv[5]) : 0;
+    DiaDaSemana_t dds = diaDaSemana(dia, mes, ano);
+    Horario_t isdst;
+    printf("Data/hora UTC: %d-%02d-%02d %02d:%02d\n",
+             ano, mes, dia, hora, minuto);
+    utcParaHorarioLocal(&ano, &mes, &dia, &hora, &dds, &isdst,
+                        Brasilia, PodeEntrarEmHorarioDeVerao);
+    if (isdst > 0) {
+      printf("Data/hora de verão de Brasília: %d-%02d-%02d %02d:%02d\n",
+             ano, mes, dia, hora, minuto);
+    } else {
+      printf("Data/hora de Brasília: %d-%02d-%02d %02d:%02d\n",
+             ano, mes, dia, hora, minuto);
+    }
+    return 0;
+  }
+
+  calculaPascoa(ano, &mesp, &diap);
   printf("Páscoa para %d é no dia %02d/%02d\n", ano, diap, mesp);
-  calculaDomingoCarnaval(&diap, &mesp, ano);
+  calculaDomingoCarnaval(ano, &mesp, &diap);
   printf("Domingo de carnaval de %d é no dia %02d/%02d\n", ano, diap, mesp);
 
-  dds = diaDaSemana(dia, mes, ano);
-  res = ehHorarioVerao(dia, mes, ano, dds);
-  if (res == 1) {
+  dds = diaDaSemana(ano, mes, dia);
+  res = horario(ano, mes, dia);
+  if (res > 0) {
     printf("O dia %02d/%02d/%d (%s) é durante o horário de verão\n",
            dia, mes, ano, downames[dds]);
   } else if (res == 0) {
